@@ -1,0 +1,186 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+	<!--
+	<script src="zepto.js"></script>
+	<script src="http://code.jquery.com/jquery.min.js"></script>
+	-->
+	<script src="basic-compat.js"></script>
+	<script src="tutechie.js"></script>
+<style>
+	#galleryTest, #galleryTest2{ overflow: hidden;width:400px;height:200px;position:relative;background: #333;}
+	#galleryTest img, #galleryTest2 img{ position:absolute; left:0;right:0;}
+
+</style>
+</head>
+<body>
+<h2>Testing Swipe right/left</h2>
+<div id="galleryTest" >
+	<img src="http://lorempixel.com/400/200/abstract">
+	<img src="http://lorempixel.com/400/200/nature">
+	<img src="http://lorempixel.com/400/200/city">
+	<img src="http://lorempixel.com/400/200/technics">
+	<img src="http://lorempixel.com/400/200/people">
+</div>
+Tap and long Tap me to see a message appear in the console on the right
+<br />
+<h2>Testing drag </h2>
+<div id="galleryTest2" >
+	<img src="http://lorempixel.com/400/200/abstract">
+	<img src="http://lorempixel.com/400/200/nature">
+	<img src="http://lorempixel.com/400/200/city">
+	<img src="http://lorempixel.com/400/200/technics">
+	<img src="http://lorempixel.com/400/200/people">
+</div>
+zoomin/out activable by pinch or mousewheel
+<pre style="position:absolute;right:10px;top:10px; width:300px;height:600px;border:solid silver 1px" id="pre"></pre>
+<script>
+	/*global $*/
+	/*jshint expr:true,browser:true*/
+	//--initilaise gallery
+	/**
+	* code is made abnormally complex to manage compatibility between jQuery/Zepto/basic-compat libraries.
+	*/
+	function log(){
+		var p = $('#pre')[0];
+		p.innerHTML += Array.prototype.join.call(arguments,', ')+'\n';
+	}
+	function logJ(){
+		return log(JSON.stringify(arguments));
+	}
+	function gallery(container,draggable){
+		if( ! (this instanceof gallery) ){
+			return new gallery(container,draggable);
+		}
+		var g = this;
+		g.draggable = draggable;
+		g.container = $(container);
+		g.zoom = 1;
+		g.offset = {left:this.container[0].left,top:this.container[0].top};
+		g.currentSlide = 0;
+		g.width = window.getComputedStyle(g.container[0]).width;
+		g.slides = [];
+		$('img',g.container).each(function(k,v){
+			v.setAttribute('data-slideId',k);
+			v.setAttribute('draggable',false);
+			if(k){
+				v.style.left = g.width;
+			}
+			g.slides.push($(v));
+		});
+		g.lastSlideId = parseInt($('img:last-child',g.container)[0].getAttribute('data-slideId'),10);
+		g.container.on('Touchstart',function(e){
+			e.preventDefault();
+		});
+		if( !draggable ){
+			g.container
+				.on('Tap',function(){
+					log('you just tapped me');
+				})
+				.on('Heldtap',function(){
+					log('you just tapped me so long');
+				})
+				.on('Swipe',function(e){
+					if( e.direction ==='left'){
+						g.goNext();
+					}else if( e.direction === 'right'){
+						g.goPrev();
+					}
+					log('swiped '+e.direction);
+				})
+			;
+		}else{
+			g.container.on('Move',function(e){
+				var	w = parseInt(g.width,10)
+					,prev = g.getSlide(g.currentSlide === 0 ? g.lastSlideId : (g.currentSlide-1))[0]
+					,next = g.getSlide(g.currentSlide === g.lastSlideId ? 0 : (g.currentSlide+1))[0]
+					,current = g.getSlide(g.currentSlide)[0]
+					,distanceX = Math.min(w,Math.max(-w,e.distanceX))
+				;
+				$([prev,current,next]).each(function(){
+					this.setAttribute('style','');
+				});
+				current.style.left = distanceX+'px';
+				prev.style.left = (distanceX-w)+'px';
+				next.style.left = (distanceX+w)+'px';
+			});
+			g.container.on('Moveend',function(e){
+				var treshold = parseInt(g.width,10)*0.33;
+				if( Math.abs(e.distanceX) > treshold  ){
+					e.distanceX > 0 ? g.goPrev() : g.goNext();
+				}else{
+					g.getSlide(g.currentSlide)[0].setAttribute('style','left:0;-webkit-transition: left '+(500*(Math.abs(e.distanceX)/treshold))+'ms linear;z-index:1');
+				}
+			});
+		}
+		g.container
+			.on('Zoomin',function(e){
+				e.preventDefault();
+				e.stopPropagation();
+				var factor = e.isTouchEvent ? 0.02 : 0.1;
+				(g.zoom+=factor) > 2 && (g.zoom = 2);
+				g.container[0].style.webkitTransform = 'scale('+g.zoom+')';
+				g.container[0].style.transform = 'scale('+g.zoom+')';
+			})
+			.on('Zoomout',function(e){
+				e.preventDefault();
+				e.stopPropagation();
+				var factor = e.isTouchEvent ? 0.02 : 0.1;
+				(g.zoom-=factor) < 0.5 && (g.zoom = 0.5);
+				g.container[0].style.webkitTransform = 'scale('+g.zoom+')';
+				g.container[0].style.transform = 'scale('+g.zoom+')';
+			})
+		;
+
+	}
+	gallery.prototype.getSlide = function(id){
+		return this.slides[id];
+	};
+	gallery.prototype.goNext=function(){
+		var g=this,next = g.currentSlide+1;
+		if( next > g.lastSlideId){
+			next = 0;
+		}
+		if( $.fn.animate ){
+			g.getSlide(g.currentSlide).animate({left:'-'+g.width},500);
+			(! g.draggable) && g.getSlide(next).css('left',g.width);
+			g.getSlide(next).animate({left:0},500);
+		}else{
+			(function(cur,next){
+				(! g.draggable) && next.setAttribute('style','left:'+g.width);
+				setTimeout(function(){
+					next.setAttribute('style','left:0; -webkit-transition: left 500ms linear');
+					cur.setAttribute('style','left:-'+g.width+'; -webkit-transition: left 500ms linear');
+				},0);
+			})(g.getSlide(g.currentSlide)[0],g.getSlide(next)[0]);
+		}
+		g.currentSlide=next;
+	};
+	gallery.prototype.goPrev=function(){
+		var g=this, next = g.currentSlide-1;
+		if( next < 0 ){
+			next = g.lastSlideId;
+		}
+		if( $.fn.animate ){
+			g.getSlide(g.currentSlide).animate({left:g.width},500);
+			(! g.draggable) && g.getSlide(next).css('left','-'+g.width);
+			g.getSlide(next).animate({left:0},500);
+		}else{
+			(function(cur,next){
+				(! g.draggable) && next.setAttribute('style','left:-'+g.width);
+				setTimeout(function(){
+					next.setAttribute('style','left:0; -webkit-transition: left 500ms linear');
+					cur.setAttribute('style','left:'+g.width+'; -webkit-transition: left 500ms linear');
+				},0);
+			})(g.getSlide(g.currentSlide)[0],g.getSlide(next)[0]);
+		}
+		g.currentSlide=next;
+	};
+
+	gallery('#galleryTest',false);
+	gallery('#galleryTest2',true);
+
+
+</script>
+</body>
+</html>
